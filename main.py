@@ -52,6 +52,7 @@ parser.add_argument('--weight', type = int, default=5000,
                        help='validation per how many iterations')
 parser.add_argument('--device', default='cuda:0',
                        help='the device you want to use to train')
+args, others_list = parser.parse_known_args() # 解析已知参数
 # print(args)
 # print(args.b)
 # parser.add_argument('--c')
@@ -110,8 +111,8 @@ class BertClassificationModel(nn.Module):
                                             padding=True,  
                                             max_length=30,  
                                             add_special_tokens=True)  
-        input_ids = torch.tensor(sentence_tokenized['input_ids']).cuda()  
-        attention_mask = torch.tensor(sentence_tokenized['attention_mask']).cuda()  
+        input_ids = torch.tensor(sentence_tokenized['input_ids']).to(args.device) 
+        attention_mask = torch.tensor(sentence_tokenized['attention_mask']).to(args.device) 
         bert_output = self.bert(input_ids, attention_mask=attention_mask)
         bert_cls_hidden_state = bert_output[0][:, 0, :] 
         # logits = self.use_bert_classify(bert_cls_hidden_state)
@@ -148,12 +149,12 @@ def train(args):
     )
     
     bert_classifier_model = BertClassificationModel()
-    bert_classifier_model = bert_classifier_model.cuda()
+    bert_classifier_model = bert_classifier_model.to(args.device)
     optimizer = torch.optim.Adam(bert_classifier_model.parameters(), lr=1e-5)
 
     # criterion = nn.MultiLabelSoftMarginLoss()
     criterion = torch.nn.MSELoss(reduction='mean')
-    criterion = criterion.cuda()
+    criterion = criterion.to(args.device)
 
     print("training start...")
     bert_classifier_model.train()
@@ -165,7 +166,7 @@ def train(args):
         loss_list = []        
         for sentences, labels in zip(train_sentence_loader, train_label_loader):
             sentences = sentences
-            labels = labels.cuda()
+            labels = labels.to(args.device)
             # print (labels)
             # break
             optimizer.zero_grad()
@@ -234,6 +235,7 @@ def eval(args):
     )
     bert_classifier_model = BertClassificationModel()
     bert_classifier_model.load_state_dict(torch.load(args.model_save + '/saved.pkl'))
+    bert_classifier_model.to(args.device)
 
     print("model saved in " + args.model_save + '/saved.pkl' + " validating start...")
     bert_classifier_model.eval()
@@ -245,7 +247,7 @@ def eval(args):
 
     for sentences, labels in zip(train_sentence_loader, train_label_loader):
 
-        labels = labels.cuda()
+        labels = labels.to(args.device)
         result = bert_classifier_model(sentences).cpu()
         loss_ite = 0
         correct_cnt = 0
@@ -346,7 +348,6 @@ def test():
     output.close()
 
 if __name__ == '__main__':
-    args, others_list = parser.parse_known_args() # 解析已知参数
     time = datetime.datetime.now()
     time_str = str(time.month) + '-' + str(time.day) + '-' + str(time.hour) + '-' + str(time.minute)
     writer = SummaryWriter('./logs/' + time_str)
