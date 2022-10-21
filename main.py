@@ -14,6 +14,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from asyncio import AbstractEventLoop
+from re import L
 from symbol import testlist_comp
 import torch
 from torch import nn
@@ -48,6 +50,8 @@ parser.add_argument('--model_save', default='/data/wangyuanchun/NLP_course/saved
                        help='validation per how many iterations')
 parser.add_argument('--weight', type = int, default=5000,
                        help='validation per how many iterations')
+parser.add_argument('--device', default='cuda:0',
+                       help='the device you want to use to train')
 # print(args)
 # print(args.b)
 # parser.add_argument('--c')
@@ -64,8 +68,10 @@ def load_data(arg_mode):
     # train_inputs, test_inputs, train_targets, test_targets = train_test_split(sentences, targets)
     if arg_mode == 'train':
         data_dir = '/data/wangyuanchun/NLP_course/dataset/post_processed/train_mse_2_line.json'
+        data_dir = '/data/wangyuanchun/NLP_course/codes/train_example.json'
     elif arg_mode == 'val':
         data_dir = '/data/wangyuanchun/NLP_course/dataset/post_processed/val_mse_2_line.json'
+        data_dir = '/data/wangyuanchun/NLP_course/codes/val_example.json'
 
     train_inputs = []
     train_targets = []
@@ -104,8 +110,8 @@ class BertClassificationModel(nn.Module):
                                             padding=True,  
                                             max_length=30,  
                                             add_special_tokens=True)  
-        input_ids = torch.tensor(sentence_tokenized['input_ids'])  
-        attention_mask = torch.tensor(sentence_tokenized['attention_mask'])  
+        input_ids = torch.tensor(sentence_tokenized['input_ids']).cuda()  
+        attention_mask = torch.tensor(sentence_tokenized['attention_mask']).cuda()  
         bert_output = self.bert(input_ids, attention_mask=attention_mask)
         bert_cls_hidden_state = bert_output[0][:, 0, :] 
         # logits = self.use_bert_classify(bert_cls_hidden_state)
@@ -140,10 +146,14 @@ def train(args):
         dataset=train_targets,
         batch_size=batch_size,
     )
+    
     bert_classifier_model = BertClassificationModel()
+    bert_classifier_model = bert_classifier_model.cuda()
     optimizer = torch.optim.Adam(bert_classifier_model.parameters(), lr=1e-5)
+
     # criterion = nn.MultiLabelSoftMarginLoss()
     criterion = torch.nn.MSELoss(reduction='mean')
+    criterion = criterion.cuda()
 
     print("training start...")
     bert_classifier_model.train()
@@ -154,6 +164,8 @@ def train(args):
         print('...this is epoch : {}...'.format(epoch))
         loss_list = []        
         for sentences, labels in zip(train_sentence_loader, train_label_loader):
+            sentences = sentences
+            labels = labels.cuda()
             # print (labels)
             # break
             optimizer.zero_grad()
@@ -169,7 +181,7 @@ def train(args):
                 # print('each_result:{}'.format(each_result))
                 # print('labels[loss_ite]:{}'.format(labels[loss_ite]))
                 # print('labels[loss_ite].detach().numpy():{}'.format(labels[loss_ite].detach().numpy()[0][0]))
-                if labels[0].detach().numpy()[loss_ite][0] == 1:
+                if labels[0].cpu().detach().numpy()[loss_ite][0] == 1:
                     loss = loss + args.weight * criterion(each_result, labels[0][loss_ite])
                 else:
                     loss = loss + criterion(each_result, labels[0][loss_ite])
@@ -181,7 +193,7 @@ def train(args):
             loss.backward()
             optimizer.step()
             # break
-            loss_list.append(loss.detach().numpy())
+            loss_list.append(loss.cpu().detach().numpy())
             iteration += 1
             if iteration and iteration % args.val_per_ite == 0:
                 torch.save(bert_classifier_model.state_dict(), args.model_save + '/saved.pkl')
@@ -233,13 +245,14 @@ def eval(args):
 
     for sentences, labels in zip(train_sentence_loader, train_label_loader):
 
-        result = bert_classifier_model(sentences)
+        labels = labels.cuda()
+        result = bert_classifier_model(sentences).cpu()
         loss_ite = 0
         correct_cnt = 0
         inco_cnt = 0
         for each_result in result:
 
-            if labels[0].detach().numpy()[loss_ite][0] == 1:
+            if labels[0].cpu().detach().numpy()[loss_ite][0] == 1:
                 if torch.argmax(each_result).item() == 0:
                     correct_cnt += 1
                 else:
