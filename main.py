@@ -13,6 +13,29 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+#
+#             佛祖保佑   🙏   永无BUG 
+#
+#                    _ooOoo_
+#                   o8888888o
+#                   88" . "88
+#                   (| -_- |)
+#                   O\  =  /O
+#                ____/`---'\____
+#              .'  \\|     |//  `.
+#             /  \\|||  :  |||//  \
+#            /  _||||| -:- |||||-  \
+#            |   | \\\  -  /// |   |
+#            | \_|  ''\---/''  |   |
+#            \  .-\__  `-`  ___/-. /
+#          ___`. .'  /--.--\  `. . __
+#       ."" '<  `.___\_<|>_/___.'  >'"".
+#      | | :  `- \`.;`\ _ /`;.`/ - ` : | |
+#      \  \ `-.   \_ __\ /__ _/   .-` /  /
+# ======`-.____`-.___\_____/___.-`____.-'======
+#                    `=---='
+# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+# happy 1024 hh
 
 from asyncio import AbstractEventLoop
 from re import L
@@ -33,6 +56,8 @@ import argparse
 import json
 import xlrd
 import os
+import torch.distributed
+from torch.nn.parallel import DistributedDataParallel as DDP
 
 parser = argparse.ArgumentParser() # 初始化
 
@@ -52,7 +77,17 @@ parser.add_argument('--weight', type = int, default=5000,
                        help='validation per how many iterations')
 parser.add_argument('--device', default='cuda:0',
                        help='the device you want to use to train')
+parser.add_argument('--local_rank', type = int, default=-1)
 args, others_list = parser.parse_known_args() # 解析已知参数
+
+# DDP参数初始化
+local_rank = args.local_rank
+torch.cuda.set_device(args.local_rank)
+
+# DDP后端初始化
+device = torch.device("cuda", local_rank)
+torch.distributed.init_process_group(backend='nccl')
+
 # print(args)
 # print(args.b)
 # parser.add_argument('--c')
@@ -111,8 +146,8 @@ class BertClassificationModel(nn.Module):
                                             padding=True,  
                                             max_length=30,  
                                             add_special_tokens=True)  
-        input_ids = torch.tensor(sentence_tokenized['input_ids']).to(args.device) 
-        attention_mask = torch.tensor(sentence_tokenized['attention_mask']).to(args.device) 
+        input_ids = torch.tensor(sentence_tokenized['input_ids']).to(device) 
+        attention_mask = torch.tensor(sentence_tokenized['attention_mask']).to(device) 
         bert_output = self.bert(input_ids, attention_mask=attention_mask)
         bert_cls_hidden_state = bert_output[0][:, 0, :] 
         # logits = self.use_bert_classify(bert_cls_hidden_state)
@@ -139,6 +174,9 @@ def train(args):
     epochs = args.epoch
     batch_size = args.batch_size
 
+    # DDP利用随机种子采样的封装好的方法
+    train_sampler = torch.utils.data.distributed.DistributedSampler
+
     train_sentence_loader = Data.DataLoader(
         dataset=train_inputs,
         batch_size=batch_size,  # 每块的大小
@@ -149,12 +187,18 @@ def train(args):
     )
     
     bert_classifier_model = BertClassificationModel()
-    bert_classifier_model = bert_classifier_model.to(args.device)
-    optimizer = torch.optim.Adam(bert_classifier_model.parameters(), lr=1e-5)
+    model = bert_classifier_model.to(local_rank)
+    #DDP 包装model
+    if torch.distributed.get_rank() == 0 and os.path.exists(args.model_save + '/saved.pkl'):
+        model.load_state_dict(torch.load(args.model_save))
+    model = DDP(model, device_ids=[local_rank], output_device=local_rank)
+
+    #用DDP包装后的model的参数来初始化迭代器
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-5)
 
     # criterion = nn.MultiLabelSoftMarginLoss()
     criterion = torch.nn.MSELoss(reduction='mean')
-    criterion = criterion.to(args.device)
+    criterion = criterion.to(local_rank)
 
     print("training start...")
     bert_classifier_model.train()
@@ -163,10 +207,10 @@ def train(args):
 
     for epoch in range(epochs): # 开始训练
         print('...this is epoch : {}...'.format(epoch))
-        loss_list = []        
+        loss_list = []       
         for sentences, labels in zip(train_sentence_loader, train_label_loader):
             sentences = sentences
-            labels = labels.to(args.device)
+            labels = labels.to(local_rank)
             # print (labels)
             # break
             optimizer.zero_grad()
@@ -197,7 +241,7 @@ def train(args):
             loss_list.append(loss.cpu().detach().numpy())
             iteration += 1
             if iteration and iteration % args.val_per_ite == 0:
-                torch.save(bert_classifier_model.state_dict(), args.model_save + '/saved.pkl')
+                torch.save(bert_classifier_model.module.state_dict(), args.model_save + '/saved.pkl')
                 bert_classifier_model.eval()
                 acc, sentence_acc = eval(args)
                 writer.add_scalar("binary_acc",acc,iteration)
@@ -211,8 +255,9 @@ def train(args):
                 if es_count == 30:
                     print('early_stopping!!!')
                     break
-
-        torch.save(bert_classifier_model.state_dict(), args.model_save + '/final.pkl')
+        
+        if torch.distributed.get_rank() == 0:
+            torch.save(bert_classifier_model.module.state_dict(), args.model_save + '/final.pkl')
 
 
 def eval(args):
@@ -235,7 +280,7 @@ def eval(args):
     )
     bert_classifier_model = BertClassificationModel()
     bert_classifier_model.load_state_dict(torch.load(args.model_save + '/saved.pkl'))
-    bert_classifier_model.to(args.device)
+    bert_classifier_model.to(device)
 
     print("model saved in " + args.model_save + '/saved.pkl' + " validating start...")
     bert_classifier_model.eval()
@@ -247,7 +292,7 @@ def eval(args):
 
     for sentences, labels in zip(train_sentence_loader, train_label_loader):
 
-        labels = labels.to(args.device)
+        labels = labels.to(device)
         result = bert_classifier_model(sentences).cpu()
         loss_ite = 0
         correct_cnt = 0
