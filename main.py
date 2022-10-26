@@ -395,7 +395,7 @@ def test():
 if __name__ == '__main__':
     time = datetime.datetime.now()
     time_str = str(time.month) + '-' + str(time.day) + '-' + str(time.hour) + '-' + str(time.minute)
-    writer = SummaryWriter('./logs/' + time_str)
+    writer = SummaryWriter('./runs/' + time_str)
     args.model_save = args.model_save + time_str
     os.system("mkdir " + args.model_save)
     train(args)
