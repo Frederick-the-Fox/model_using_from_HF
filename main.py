@@ -50,7 +50,7 @@ parser.add_argument('--model_save', default='/data/wangyuanchun/NLP_course/saved
                        help='validation per how many iterations')
 parser.add_argument('--weight', type = int, default=5000,
                        help='validation per how many iterations')
-parser.add_argument('--device', default='cuda:0',
+parser.add_argument('--device', default='cuda',
                        help='the device you want to use to train')
 args, others_list = parser.parse_known_args() # 解析已知参数
 # print(args)
@@ -69,10 +69,10 @@ def load_data(arg_mode):
     # train_inputs, test_inputs, train_targets, test_targets = train_test_split(sentences, targets)
     if arg_mode == 'train':
         data_dir = '/data/wangyuanchun/NLP_course/dataset/post_processed/train_mse_2_line.json'
-        data_dir = '/data/wangyuanchun/NLP_course/codes/train_example.json'
+        data_dir = '/data/wangyuanchun/NLP_course/codes/datas/train_example.json'
     elif arg_mode == 'val':
         data_dir = '/data/wangyuanchun/NLP_course/dataset/post_processed/val_mse_2_line.json'
-        data_dir = '/data/wangyuanchun/NLP_course/codes/val_example.json'
+        data_dir = '/data/wangyuanchun/NLP_course/codes/datas/val_example.json'
 
     train_inputs = []
     train_targets = []
@@ -128,6 +128,27 @@ class BertClassificationModel(nn.Module):
         return output
 
 
+# -------------------- 第一步：定义接收feature的函数 ---------------------- #
+# 这里定义了一个类，类有一个接收feature的函数hook_fun。定义类是为了方便提取多个中间层。
+class HookTool: 
+    def __init__(self):
+        self.fea = None 
+
+    def hook_fun(self, module, fea_in, fea_out):
+        self.fea = fea_out
+
+# ---------- 第二步：注册hook，告诉模型我将在哪些层提取feature -------- #
+def get_feas_by_hook(model):
+    fea_hooks = []
+    for n, m in model.named_modules():
+        if n == "bert.encoder.layer.11":
+            cur_hook = HookTool()
+            m.register_forward_hook(cur_hook.hook_fun)
+            fea_hooks.append(cur_hook)
+
+    return fea_hooks
+
+
 def train(args):
     print("start loading data...")
     train_inputs, train_targets = load_data('train')
@@ -150,6 +171,15 @@ def train(args):
     
     bert_classifier_model = BertClassificationModel()
     bert_classifier_model = bert_classifier_model.to(args.device)
+
+    fea_hooks = get_feas_by_hook(bert_classifier_model) # 调用函数，完成注册即可
+
+    print('The number of hooks is:', len(fea_hooks))
+
+    # for name, each in bert_classifier_model.named_modules():
+    #     if name == "bert.encoder.layer.11":
+    #         print(each.named_children())
+
     optimizer = torch.optim.Adam(bert_classifier_model.parameters(), lr=1e-5)
 
     # criterion = nn.MultiLabelSoftMarginLoss()
@@ -171,6 +201,7 @@ def train(args):
             # break
             optimizer.zero_grad()
             result = bert_classifier_model(sentences)
+            print('The shape of the last bert layer feature is:', fea_hooks[0].fea[0].shape)
             # print(result)
             # print(labels)
             loss = torch.tensor(0)
