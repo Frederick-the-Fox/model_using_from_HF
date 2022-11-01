@@ -1,6 +1,18 @@
 # coding=utf-8
 # Copyright (c) 2022, Frederick Yuanchun Wang. wyc99@mail.nwpu.edu.cn 
 # All rights reserved.
+#     
+#  ___      ___       __       ___
+#   \_ \_   \_ \_   _/  \_   _/ _/
+#     \  \    \_ \_/ _/\_ \_/ _/
+#     \all \    \___/    \___/
+#    /rights\     \_ \__/ _/
+#   /reserved       \_  _/    ✿
+#  | WangYC /      _/__/_ _ _`|'
+#  \  99   /     _/ _ _ _ _ _/
+#   \  ©  /    _/ _/
+#     \_  \  _/ _/_ _ _ _ _
+#       \_\_/_ _ _ _ _ _ _/
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,29 +25,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#
-#             佛祖保佑   🙏   永无BUG 
-#
-#                    _ooOoo_
-#                   o8888888o
-#                   88" . "88
-#                   (| -_- |)
-#                   O\  =  /O
-#                ____/`---'\____
-#              .'  \\|     |//  `.
-#             /  \\|||  :  |||//  \
-#            /  _||||| -:- |||||-  \
-#            |   | \\\  -  /// |   |
-#            | \_|  ''\---/''  |   |
-#            \  .-\__  `-`  ___/-. /
-#          ___`. .'  /--.--\  `. . __
-#       ."" '<  `.___\_<|>_/___.'  >'"".
-#      | | :  `- \`.;`\ _ /`;.`/ - ` : | |
-#      \  \ `-.   \_ __\ /__ _/   .-` /  /
-# ======`-.____`-.___\_____/___.-`____.-'======
-#                    `=---='
-# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-# happy 1024 hh
 
 from asyncio import AbstractEventLoop
 from re import L
@@ -166,7 +155,6 @@ class BertClassificationModel(nn.Module):
 def train(args):
     print("start loading data...")
     train_inputs, train_targets = load_data('train')
-
     print("data loaded! ")
     # epochs = args.epoch
     # batch_size = args.batch_size
@@ -398,7 +386,7 @@ if __name__ == '__main__':
     writer = SummaryWriter('./runs/' + time_str)
     args.model_save = args.model_save + time_str
     os.system("mkdir " + args.model_save)
-    train(args)
+    train(args, writer)
     # eval(args)
     # test()
     print('done :-)')
